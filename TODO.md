@@ -1,4 +1,4 @@
-# TODO: Deep Latent Compression Repo
+# TODO: Task Aware Compressor
 
 ## Group 1: Dataset Loading & Filtering
 - [ ] Load and preprocess CIFAR-10 images (resize, convert to tensor, normalize).  
