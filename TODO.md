@@ -1,16 +1,16 @@
 # TODO: Task Aware Compressor
 
-## Group 1: Dataset Loading & Filtering
-- [ ] Load and preprocess CIFAR-10 images (resize, convert to tensor, normalize).  
-- [ ] Filter dataset to include only 'cat' and 'dog', remapping labels (`cat -> 1`, `dog -> 0`).  
-- [ ] Implement PyTorch `Dataset` class for the filtered subset.  
-- [ ] Convert full training set into the specialized Cat/Dog dataset instance.  
+## Group 1: Dataset Loading & Filtering [DONE]
+- [x] Load and preprocess CIFAR-10 images (resize, convert to tensor, normalize).  
+- [x] Filter dataset to include only 'cat' and 'dog', remapping labels (`cat -> 1`, `dog -> 0`).  
+- [x] Implement PyTorch `Dataset` class for the filtered subset.  
+- [x] Convert full training set into the specialized Cat/Dog dataset instance.  
 
-## Group 2: Data Loading & ResNet Setup
-- [ ] Set up DataLoaders with the desired batch size for training and testing.  
-- [ ] Load pretrained ResNet18.  
-- [ ] Modify the final fully connected layer of ResNet18 for binary classification.  
-- [ ] Freeze all layers except `layer3`, `layer4`, and `fc`.  
+## Group 2: Data Loading & ResNet Setup [DONE]
+- [x] Set up DataLoaders with the desired batch size for training and testing.  
+- [x] Load pretrained ResNet18.  
+- [x] Modify the final fully connected layer of ResNet18 for binary classification.  
+- [x] Freeze all layers except `layer3`, `layer4`, and `fc`.  
 
 ## Group 3: Fine-Tuning & Latent Module Prep
 - [ ] Implement the fine-tuning loop (zero gradients, forward pass, loss computation, backprop, parameter update).  
