@@ -12,12 +12,14 @@
 - [x] Modify the final fully connected layer of ResNet18 for binary classification.  
 - [x] Freeze all layers except `layer3`, `layer4`, and `fc`.  
 
-## Group 3: Fine-Tuning & Latent Module Prep
-- [ ] Implement the fine-tuning loop (zero gradients, forward pass, loss computation, backprop, parameter update).  
-- [ ] Record training and validation loss and accuracy after fine-tuning.  
-- [ ] Implement `ResNet18_ImageLatent` forward pass to extract features up to `layer3`.  
-- [ ] Implement `ResNet18_SemanticLatent` module (uses `layer4` and `fc`) for classification.  
-- [ ] Verify that `image_latent` stops at `layer3` and check input channels of first conv in `layer4` of `semantic_latent`.  
+## Group 3: Fine-Tuning & Latent Module Prep [DONE]
+- [x] Load model, loss, optimizer, and LR scheduler.
+- [x] Fine-tune model with training and validation loops.
+- [x] Track and print loss and accuracy per epoch.
+- [x] Apply early stopping with patience.
+- [x] Save best and final model weights.
+- [x] Load best weights and report final validation accuracy.
+
 
 ## Group 4: Decoder & Evaluation
 - [ ] Define Decoder architecture (ConvTranspose layers and final activation).  
