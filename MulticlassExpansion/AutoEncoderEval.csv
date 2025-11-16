@@ -1,0 +1,2 @@
+recon_acc,recon_CE,orig_avg_KB,recon_avg_KB,compression_pct,Type
+0.6937,1.151448118019104,1.45046123046875,1.4177451171875,2.25556620156453,SimpleAE
