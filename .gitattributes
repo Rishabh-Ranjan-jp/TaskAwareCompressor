@@ -1,0 +1,8 @@
+# Always use LF for all text files
+* text=auto eol=lf
+
+# Prevent Git from messing with Jupyter notebooks
+*.ipynb binary
+
+# CSV files stay as normal text
+*.csv text
