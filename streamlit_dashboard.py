@@ -1,14 +1,8 @@
 """
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                      STREAMLIT_DASHBOARD.PY                                 ║
-║         Task-Aware Image Reconstruction - Interactive Dashboard             ║
-║                  PREMIUM DESIGN + COMPREHENSIVE BINARY ANALYSIS             ║
-║                                                                              ║
-║  Smart model loading:                                                       ║
-║  - Analysis/Graphs: ALWAYS uses multiclass (full CIFAR-10)                 ║
-║  - Interactive Demo: ALWAYS uses binary (custom images only)               ║
-║  - NEW: Comprehensive binary decoder analysis + baselines                  ║
-╚══════════════════════════════════════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════════════════════════════════╗
+║ TASK-AWARE IMAGE RECONSTRUCTION - DEMO (6 VARIANTS, 5 SAMPLES)               ║
+║ Original + Deep AE + SimpleTanh + SimpleSig + MRTanh + MRSig side by side    ║
+╚════════════════════════════════════════════════════════════════════════════════╝
 """
 
 import streamlit as st
@@ -16,177 +10,185 @@ import torch
 import torch.nn as nn
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from PIL import Image
-import plotly.graph_objects as go
-import plotly.express as px
-from torchvision import models, transforms
+from PIL import Image, ImageFile
+import matplotlib.pyplot as plt
+from torchvision import models, transforms, datasets
 from torchvision.models import resnet18, ResNet18_Weights
-import os
+import glob
+import io
 
-# ───────────────────────────────────────────────────────────────────────────────
-# 📥 IMPORTS FROM CONFIG
-# ───────────────────────────────────────────────────────────────────────────────
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
-from config import (
-    CUSTOM_DATASET_PATH, CIFAR10_MEAN, CIFAR10_STD,
-    BINARY_METRICS, MULTICLASS_METRICS, BASELINES, EXTRACTOR_SPECIFICITY,
-    BINARY_CLASSES, CIFAR10_CLASSES,
-    BINARY_DECODERS, MULTICLASS_DECODERS,
-    BINARY_CLASSIFIER, MULTICLASS_CLASSIFIER
-)
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 🎨 PAGE CONFIGURATION & STYLING - PREMIUM DESIGN
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# ═════════════════════════════════════════════════════════════════════════════
 st.set_page_config(
-    page_title="Task-Aware Image Reconstruction",
+    page_title="Task-Aware Reconstruction",
     page_icon="🖼️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# Premium CSS styling
 st.markdown("""
-<style>
+    <style>
     :root {
-        --primary-color: #1E3A8A;
-        --secondary-color: #F59E0B;
-        --success-color: #10B981;
-        --danger-color: #EF4444;
-        --light-bg: #F8FAFC;
-        --card-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+        --primary: #667eea;
+        --primary-dark: #764ba2;
+        --accent: #00d4ff;
+        --bg-dark: #0a0e27;
+        --bg-card: #1a1f3a;
+        --border: #2d3561;
+        --text-primary: #e8eaf6;
+        --text-secondary: #b0bec5;
     }
     
-    * {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    .stApp {
+        background-color: var(--bg-dark);
+        color: var(--text-primary);
+    }
+    
+    .header-premium {
+        font-size: 2.4em;
+        font-weight: 700;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 8px;
+        letter-spacing: -0.5px;
+    }
+    
+    .subheader-premium {
+        font-size: 1.1em;
+        color: var(--text-secondary);
+        margin-bottom: 24px;
+        font-weight: 300;
+        letter-spacing: 0.5px;
+    }
+    
+    .section-title {
+        font-size: 1.3em;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-top: 20px;
+        margin-bottom: 12px;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 8px;
     }
     
     .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 24px;
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
+        border: 1px solid var(--border);
+        color: var(--text-primary);
+        padding: 16px;
         border-radius: 12px;
-        color: white;
-        margin: 10px 0;
-        box-shadow: var(--card-shadow);
-        border: 1px solid rgba(255,255,255,0.1);
+        text-align: center;
+        font-weight: 500;
+        backdrop-filter: blur(10px);
         transition: all 0.3s ease;
     }
     
     .metric-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 12px 35px rgba(0, 0, 0, 0.12);
+        border-color: #667eea;
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.25) 0%, rgba(118, 75, 162, 0.25) 100%);
     }
     
-    .premium-header {
-        background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);
-        color: white;
-        padding: 40px 20px;
-        border-radius: 12px;
-        margin-bottom: 30px;
-        box-shadow: var(--card-shadow);
-    }
-    
-    .section-header {
-        color: #1E3A8A;
+    .metric-value {
+        font-size: 2.2em;
+        margin: 8px 0;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
         font-weight: 700;
-        font-size: 24px;
-        margin-top: 30px;
-        margin-bottom: 20px;
-        border-left: 4px solid #F59E0B;
-        padding-left: 15px;
     }
     
-    .decoder-title {
-        color: #1E3A8A;
-        font-weight: 700;
-        font-size: 18px;
+    .metric-label {
+        font-size: 0.8em;
+        color: var(--text-secondary);
+        margin-top: 4px;
     }
     
-    .mode-badge {
-        padding: 10px 18px;
-        border-radius: 20px;
-        font-weight: 600;
+    .text-muted {
+        color: var(--text-secondary);
+        font-size: 0.9em;
+        line-height: 1.6;
+    }
+    
+    .text-accent {
+        color: #00d4ff;
+        font-weight: 500;
+    }
+    
+    .info-box {
+        background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(102, 126, 234, 0.1) 100%);
+        border-left: 3px solid #00d4ff;
+        padding: 12px 16px;
+        border-radius: 6px;
+        margin: 12px 0;
+        font-size: 0.9em;
+        color: var(--text-primary);
+    }
+    
+    .divider-premium {
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--border), transparent);
+        margin: 24px 0;
+    }
+    
+    .experimental-badge {
         display: inline-block;
-        margin: 5px 0;
-        font-size: 14px;
-        letter-spacing: 0.5px;
+        background: linear-gradient(135deg, rgba(255, 107, 107, 0.2) 0%, rgba(255, 159, 107, 0.2) 100%);
+        border: 1px solid rgba(255, 107, 107, 0.5);
+        color: #ff6b6b;
+        padding: 4px 12px;
+        border-radius: 6px;
+        font-size: 0.75em;
+        font-weight: 600;
+        margin-left: 8px;
     }
     
-    .mode-badge-binary {
-        background: linear-gradient(135deg, #E0F2FE 0%, #BAE6FD 100%);
-        color: #0C4A6E;
-        border: 1px solid #0EA5E9;
+    [data-testid="stDataFrame"] {
+        background-color: var(--bg-card);
     }
     
-    .mode-badge-multiclass {
-        background: linear-gradient(135deg, #FEF3C7 0%, #FCD34D 100%);
-        color: #92400E;
-        border: 1px solid #F59E0B;
+    [data-testid="stSidebar"] {
+        background-color: var(--bg-dark);
+        border-right: 1px solid var(--border);
     }
     
-    .info-card {
-        background: linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%);
-        padding: 20px;
-        border-radius: 12px;
-        border-left: 4px solid #0EA5E9;
-        margin: 15px 0;
+    .stButton>button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        font-weight: 600;
+        border-radius: 8px;
+        transition: all 0.3s ease;
     }
     
-    .success-card {
-        background: linear-gradient(135deg, #F0FDF4 0%, #DBEAFE 100%);
-        padding: 20px;
-        border-radius: 12px;
-        border-left: 4px solid #10B981;
+    .stButton>button:hover {
+        opacity: 0.9;
+        box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
     }
     
-    .st-dataframe {
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow: var(--card-shadow);
-    }
-    
-    .stMetric {
-        background: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-        border: 1px solid #E5E7EB;
-    }
-    
-    .stPlotlyChart {
-        border-radius: 12px;
-        overflow: hidden;
-    }
-</style>
+    </style>
 """, unsafe_allow_html=True)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 🏗️ ARCHITECTURE CLASSES
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
+# 🏗️ MODELS
+# ═════════════════════════════════════════════════════════════════════════════
 
 class ResNet18Encoder(nn.Module):
-    """ResNet-18 encoder up to Layer 3 (256 channels, 8×8 spatial)"""
     def __init__(self):
         super().__init__()
         base_model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         self.features = nn.Sequential(
-            base_model.conv1,
-            base_model.bn1,
-            base_model.relu,
-            base_model.maxpool,
-            base_model.layer1,
-            base_model.layer2,
-            base_model.layer3
+            base_model.conv1, base_model.bn1, base_model.relu, base_model.maxpool,
+            base_model.layer1, base_model.layer2, base_model.layer3
         )
     
     def forward(self, x):
         return self.features(x)
 
-
 class SimpleDecoder(nn.Module):
-    """Simple decoder: 4 ConvTranspose layers (256→128→64→32→3)"""
     def __init__(self, activation='tanh'):
         super().__init__()
         self.decode = nn.Sequential(
@@ -203,9 +205,7 @@ class SimpleDecoder(nn.Module):
     def forward(self, x):
         return self.decode(x)
 
-
 class MirrorBasicBlock(nn.Module):
-    """Mirrored ResNet BasicBlock with residual connections"""
     def __init__(self, block):
         super().__init__()
         self.deconv2 = self._mirror_conv(block.conv2)
@@ -247,9 +247,7 @@ class MirrorBasicBlock(nn.Module):
         out = self.relu(out)
         return out
 
-
 class MirroredResNetDecoder(nn.Module):
-    """Fully mirrored ResNet decoder with residual connections"""
     def __init__(self, base_model=None, activation='tanh'):
         super().__init__()
         if base_model is None:
@@ -262,9 +260,10 @@ class MirroredResNetDecoder(nn.Module):
         self.up3 = mirror_layer(base_model.layer3)
         self.up2 = mirror_layer(base_model.layer2)
         self.up1 = mirror_layer(base_model.layer1)
-        self.final = nn.ConvTranspose2d(64, 3, kernel_size=7, stride=2, padding=3, output_padding=1)
         
+        self.final = nn.ConvTranspose2d(64, 3, kernel_size=7, stride=2, padding=3, output_padding=1)
         final_activation = nn.Tanh() if activation == 'tanh' else nn.Sigmoid()
+        
         self.upsample_final = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
             nn.Conv2d(3, 3, kernel_size=3, stride=1, padding=1),
@@ -279,57 +278,58 @@ class MirroredResNetDecoder(nn.Module):
         x = self.upsample_final(x)
         return x
 
-
-class DeepAutoencoder(nn.Module):
-    """Deep Autoencoder for baseline comparison"""
-    def __init__(self):
+class DeepAutoencoder_Encoder(nn.Module):
+    def __init__(self, z_channels=512):
         super().__init__()
-        # Encoder
-        self.encoder = nn.Sequential(
-            nn.Conv2d(3, 64, 4, stride=2, padding=1),
-            nn.ReLU(True),
-            nn.Conv2d(64, 128, 4, stride=2, padding=1),
-            nn.ReLU(True),
-            nn.Conv2d(128, 256, 4, stride=2, padding=1),
-            nn.ReLU(True),
+        self.enc = nn.Sequential(
+            nn.Conv2d(3, 64, 4, 2, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 128, 4, 2, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, 3, 1, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 256, 4, 2, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, z_channels, 3, 1, 1),
+            nn.ReLU(inplace=True)
         )
-        # Decoder
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(256, 128, 4, stride=2, padding=1),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(64, 3, 4, stride=2, padding=1),
+    
+    def forward(self, x):
+        return self.enc(x)
+
+class DeepAutoencoder_Decoder(nn.Module):
+    def __init__(self, z_channels=512):
+        super().__init__()
+        self.dec = nn.Sequential(
+            nn.Conv2d(z_channels, 256, 3, 1, 1),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(256, 256, 4, 2, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 128, 3, 1, 1),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(128, 128, 4, 2, 1),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(128, 64, 4, 2, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 3, 3, 1, 1),
             nn.Tanh()
         )
     
-    def forward(self, x):
-        x = self.encoder(x)
-        x = self.decoder(x)
-        return x
+    def forward(self, z):
+        return self.dec(z)
 
-
-class BinaryClassifier(nn.Module):
-    """Binary classifier wrapper (Cats vs Dogs)"""
-    def __init__(self):
+class DeepAutoencoder(nn.Module):
+    def __init__(self, z_channels=512):
         super().__init__()
-        self.model = resnet18(weights=ResNet18_Weights.DEFAULT)
-        num_ftrs = self.model.fc.in_features
-        self.model.fc = nn.Linear(num_ftrs, 2)
-        
-        for param in self.model.parameters():
-            param.requires_grad = False
-        
-        for layer in [self.model.layer3, self.model.layer4, self.model.fc]:
-            for param in layer.parameters():
-                param.requires_grad = True
+        self.encoder = DeepAutoencoder_Encoder(z_channels)
+        self.decoder = DeepAutoencoder_Decoder(z_channels)
     
     def forward(self, x):
-        return self.model(x)
-
+        z = self.encoder(x)
+        x_recon = self.decoder(z)
+        return x_recon
 
 class MulticlassClassifier(nn.Module):
-    """Multiclass classifier wrapper (CIFAR-10)"""
     def __init__(self):
         super().__init__()
         base_model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
@@ -342,16 +342,15 @@ class MulticlassClassifier(nn.Module):
         x = self.fc(x)
         return x
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 💾 CACHED MODEL LOADING
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
+# 💾 MODEL LOADING
+# ═════════════════════════════════════════════════════════════════════════════
 
 @st.cache_resource
-def load_analysis_models():
-    """Load MULTICLASS models for analysis/graphs/results"""
+def load_models():
     models_dict = {}
     
-    with st.spinner("🔄 Loading multiclass models for analysis..."):
+    with st.spinner("⚡ Loading models..."):
         encoder = ResNet18Encoder()
         encoder.eval()
         models_dict['encoder'] = encoder
@@ -360,773 +359,391 @@ def load_analysis_models():
         classifier.eval()
         models_dict['classifier'] = classifier
         
-        models_dict['decoders'] = {}
-        for decoder_name, decoder_info in MULTICLASS_DECODERS.items():
-            decoder_class = SimpleDecoder if decoder_info['architecture'] == "Simple" else MirroredResNetDecoder
-            decoder = decoder_class(activation=decoder_info['activation'])
-            decoder.eval()
-            
-            try:
-                state_dict = torch.load(decoder_info['path'], map_location='cpu', weights_only=True)
-                decoder.load_state_dict(state_dict)
-                models_dict['decoders'][decoder_name] = decoder
-            except Exception as e:
-                st.warning(f"⚠️ Could not load {decoder_name}: {str(e)}")
-    
-    return models_dict
-
-
-@st.cache_resource
-def load_demo_models():
-    """Load BINARY models for interactive demo"""
-    models_dict = {}
-    
-    with st.spinner("🔄 Loading binary models for demo..."):
-        encoder = ResNet18Encoder()
-        encoder.eval()
-        models_dict['encoder'] = encoder
+        # Binary classifier - load ResNet18 directly (not wrapped)
+        binary_classifier = resnet18(weights=ResNet18_Weights.DEFAULT)
+        num_ftrs = binary_classifier.fc.in_features
+        binary_classifier.fc = nn.Linear(num_ftrs, 2)
+        binary_classifier.eval()
+        try:
+            state_dict = torch.load('model.pth', map_location='cpu', weights_only=True)
+            binary_classifier.load_state_dict(state_dict)
+        except Exception as e:
+            st.warning(f"⚠️ Binary classifier load failed: {str(e)}")
+        models_dict['binary_classifier'] = binary_classifier
         
-        classifier = BinaryClassifier()
-        classifier.eval()
-        models_dict['classifier'] = classifier
-        
-        # Deep Autoencoder for baseline
-        deep_ae = DeepAutoencoder()
+        deep_ae = DeepAutoencoder(z_channels=512)
         deep_ae.eval()
+        try:
+            state_dict = torch.load('MulticlassExpansion/deep_autoencoder.pth', map_location='cpu', weights_only=True)
+            deep_ae.load_state_dict(state_dict)
+        except Exception as e:
+            st.warning(f"⚠️ Deep AE load failed: {str(e)}")
         models_dict['deep_ae'] = deep_ae
         
-        models_dict['decoders'] = {}
-        for decoder_name, decoder_info in BINARY_DECODERS.items():
-            decoder_class = SimpleDecoder if decoder_info['architecture'] == "Simple" else MirroredResNetDecoder
-            decoder = decoder_class(activation=decoder_info['activation'])
-            decoder.eval()
-            
+        decoders = {}
+        decoder_configs = [
+            ('SimpleTanh', 'simple', 'tanh', 'MulticlassExpansion/SSigmoid_TargetAlpha/decoder*.pth'),
+            ('SimpleSigmoid', 'simple', 'sigmoid', 'MulticlassExpansion/SSigmoid_TargetAlpha/decoder*.pth'),
+            ('MRTanh', 'mirrored', 'tanh', 'MulticlassExpansion/MRTanh_TargetAlpha/decoder*.pth'),
+            ('MRSigmoid', 'mirrored', 'sigmoid', 'MulticlassExpansion/MRSigmoid_TargetAlpha/decoder*.pth'),
+        ]
+        
+        for name, arch, act, pattern in decoder_configs:
             try:
-                state_dict = torch.load(decoder_info['path'], map_location='cpu', weights_only=True)
-                decoder.load_state_dict(state_dict)
-                models_dict['decoders'][decoder_name] = decoder
+                decoder_class = SimpleDecoder if arch == 'simple' else MirroredResNetDecoder
+                decoder = decoder_class(activation=act)
+                decoder.eval()
+                
+                pth_files = glob.glob(pattern)
+                if pth_files:
+                    state_dict = torch.load(pth_files[0], map_location='cpu', weights_only=True)
+                    decoder.load_state_dict(state_dict)
+                
+                decoders[name] = decoder
             except Exception as e:
-                st.warning(f"⚠️ Could not load {decoder_name}: {str(e)}")
+                st.warning(f"⚠️ Could not load {name}: {str(e)}")
+        
+        models_dict['decoders'] = decoders
     
     return models_dict
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 🖼️ IMAGE PROCESSING
-# ═══════════════════════════════════════════════════════════════════════════════
+@st.cache_resource
+def load_cifar10():
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.4914, 0.4822, 0.4465],
+                           std=[0.247, 0.243, 0.261])
+    ])
+    test_dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+    return test_dataset
 
-def preprocess_image(image: Image.Image) -> torch.Tensor:
-    """Convert PIL image to normalized tensor"""
-    image = image.resize((32, 32))
-    image_array = np.array(image) / 255.0
-    image_tensor = torch.FloatTensor(image_array).permute(2, 0, 1).unsqueeze(0)
-    
-    normalize = transforms.Normalize(mean=CIFAR10_MEAN, std=CIFAR10_STD)
-    image_tensor = normalize(image_tensor)
-    
-    return image_tensor
+# ═════════════════════════════════════════════════════════════════════════════
+# 🖼️ UTILITIES
+# ═════════════════════════════════════════════════════════════════════════════
 
-
-def tensor_to_image(tensor: torch.Tensor) -> Image.Image:
-    """Convert tensor back to PIL image"""
-    tensor = tensor.squeeze(0).detach().cpu()
-    
+def denormalize_tensor(tensor):
+    """Convert normalized tensor to PIL image"""
+    img = tensor.clone().squeeze(0)
     for c in range(3):
-        tensor[c] = tensor[c] * CIFAR10_STD[c] + CIFAR10_MEAN[c]
-    
-    tensor = torch.clamp(tensor, 0, 1)
-    image_array = (tensor.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
-    return Image.fromarray(image_array)
+        img[c] = img[c] * torch.tensor([0.247, 0.243, 0.261])[c] + torch.tensor([0.4914, 0.4822, 0.4465])[c]
+    img = torch.clamp(img, 0, 1)
+    return transforms.ToPILImage()(img)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 📄 PAGE: HOME & OVERVIEW
-# ═══════════════════════════════════════════════════════════════════════════════
+def prepare_image(pil_img):
+    """Prepare PIL image for model input"""
+    pil_img = pil_img.resize((32, 32), Image.LANCZOS)
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.4914, 0.4822, 0.4465],
+                           std=[0.247, 0.243, 0.261])
+    ])
+    return transform(pil_img).unsqueeze(0)
 
-def page_home():
-    """Home page with project overview"""
-    st.markdown("""
-    <div class="premium-header">
-        <h1 style="margin: 0; font-size: 42px; font-weight: 800;">🖼️ Task-Aware Image Reconstruction</h1>
-        <p style="margin: 10px 0 0 0; font-size: 18px; opacity: 0.95;">Normalized Loss Balancing for Efficient Vision Systems</p>
-    </div>
-    """, unsafe_allow_html=True)
+# ═════════════════════════════════════════════════════════════════════════════
+# 📄 PAGE 1: INTRO
+# ═════════════════════════════════════════════════════════════════════════════
+
+def page_intro():
+    st.markdown('<div class="header-premium">🖼️ Task-Aware Image Reconstruction</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subheader-premium">Normalized Loss Balancing for Edge Vision</div>', unsafe_allow_html=True)
     
-    st.markdown("---")
+    st.markdown('<div class="divider-premium"></div>', unsafe_allow_html=True)
     
-    # Hero section
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns(2, gap="large")
     
     with col1:
+        st.markdown('<div class="section-title">⚡ The Problem</div>', unsafe_allow_html=True)
         st.markdown("""
-        ### 🎯 The Problem
-        
-        Traditional image compression:
-        - ❌ Optimized for human perception
-        - ❌ Degrades classification accuracy
-        - ❌ Wastes bandwidth on irrelevant details
-        - ❌ No task awareness
-        """)
+        <div class="text-muted">
+        Traditional image compression (JPEG, WebP) optimizes for <span class="text-accent">human perception</span>.
+        <br><br>
+        But on edge devices, this creates a critical mismatch:
+        <br>• Wastes bandwidth transmitting task-irrelevant details
+        <br>• Destroys features classifiers depend on
+        <br>• Machines and humans need different representations
+        </div>
+        """, unsafe_allow_html=True)
     
     with col2:
+        st.markdown('<div class="section-title">💡 Our Solution</div>', unsafe_allow_html=True)
         st.markdown("""
-        ### ✅ Our Solution
-        
-        **Normalized Loss Balancing**:
-        - ✓ Task-aware compression
-        - ✓ Stable multi-objective optimization
-        - ✓ Interpretable α ∈ [0,1] control
-        - ✓ Exponential Moving Average normalization
-        """)
+        <div class="text-muted">
+        <strong>Task-aware compression</strong> via normalized loss balancing.
+        <br><br>
+        Simultaneously optimize two objectives:
+        <br>• Classification accuracy (task performance)
+        <br>• Reconstruction quality (compression efficiency)
+        <br><br>
+        Controlled by interpretable <span class="text-accent">α ∈ [0, 1]</span> parameter.
+        </div>
+        """, unsafe_allow_html=True)
     
-    st.markdown("---")
-    st.markdown("<h2 class='section-header'>💡 The Key Innovation</h2>", unsafe_allow_html=True)
+    st.markdown('<div class="divider-premium"></div>', unsafe_allow_html=True)
     
-    innovation_cols = st.columns(3)
+    st.markdown('<div class="section-title">📊 Results at a Glance</div>', unsafe_allow_html=True)
     
-    with innovation_cols[0]:
-        st.markdown("""
-        #### ❌ Fixed Weights
-        ```
-        Loss = α·CE + (1-α)·MSE
-        
-        CE: 0-3
-        MSE: 10³-10⁵
-        
-        ❌ Imbalanced scales
-        ❌ α meaningless
-        ❌ Unstable
-        ```
-        """)
+    metric_cols = st.columns(4, gap="small")
+    metrics = [
+        ("Accuracy", "78.40%", "vs 77.71% baseline"),
+        ("Compaction", "18% avg", "22–23% for simple decoders"),
+        ("Privacy", "11.23%", "cross-model extractor specificity"),
+        ("Experiments", "464", "on CIFAR-10"),
+    ]
     
-    with innovation_cols[1]:
-        st.markdown("""
-        #### 🔄 EMA Normalization
-        ```
-        μ_CE = EMA(CE_t)
-        μ_MSE = EMA(MSE_t)
-        
-        Loss = α·CE/μ_CE + 
-               (1-α)·MSE/μ_MSE
-        
-        ✓ Balanced scales
-        ✓ α meaningful
-        ✓ Stable
-        ```
-        """)
+    for col, (label, value, desc) in zip(metric_cols, metrics):
+        with col:
+            st.markdown(f"""
+            <div class="metric-card">
+            <div class="metric-value">{value}</div>
+            <div class="metric-label">{label}</div>
+            <div class="metric-label" style="font-size: 0.7em; margin-top: 6px; color: #00d4ff;">{desc}</div>
+            </div>
+            """, unsafe_allow_html=True)
     
-    with innovation_cols[2]:
-        st.markdown("""
-        #### ✅ Results
-        ```
-        Interpretable control:
-        
-        α=0: Max compression
-        α=0.5: Balanced
-        α=1: Full fidelity
-        
-        Consistent across
-        all 4 architectures!
-        ```
-        """)
+    st.markdown('<div class="divider-premium"></div>', unsafe_allow_html=True)
     
-    st.markdown("---")
-    st.markdown("<h2 class='section-header'>📊 Key Results</h2>", unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🔍 Why This Matters</div>', unsafe_allow_html=True)
     
-    res_col1, res_col2, res_col3 = st.columns(3)
-    
-    with res_col1:
-        st.metric(
-            label="🎯 Accuracy Maintained",
-            value="78.40%",
-            delta="+0.69%"
-        )
-        st.caption("vs baseline 77.71%")
-    
-    with res_col2:
-        st.metric(
-            label="📦 Average Compaction",
-            value="13.29%",
-            delta="File size reduction"
-        )
-        st.caption("15-23% per decoder")
-    
-    with res_col3:
-        st.metric(
-            label="🔐 Privacy Transfer",
-            value="11.23%",
-            delta="Cross-model only"
-        )
-        st.caption("Strong preservation")
-    
-    st.markdown("---")
-    st.markdown("<h2 class='section-header'>🔬 Experimental Scale</h2>", unsafe_allow_html=True)
-    
-    exp_col1, exp_col2, exp_col3 = st.columns(3)
-    
-    with exp_col1:
-        st.markdown(f"""
-        #### 📈 Multiclass (CIFAR-10)
-        - **{MULTICLASS_METRICS['total_experiments']}** experiments
-        - **{MULTICLASS_METRICS['architectures']}** architectures
-        - **{MULTICLASS_METRICS['total_gpu_hours']}** GPU hours
-        - **10** classes
-        """)
-    
-    with exp_col2:
-        st.markdown(f"""
-        #### 👥 Binary (Custom Dataset)
-        - **{BINARY_METRICS['total_experiments']}** experiments
-        - **{BINARY_METRICS['architectures']}** architectures
-        - **{BINARY_METRICS['total_gpu_hours']}** GPU hours
-        - **2** classes
-        """)
-    
-    with exp_col3:
-        st.markdown(f"""
-        #### 💻 Hardware
-        - **GPU:** RTX 3050 (4GB/6GB)
-        - **CPU:** Intel i5/i7
-        - **Total:** **{BINARY_METRICS['total_gpu_hours'] + MULTICLASS_METRICS['total_gpu_hours']}** GPU hours
-        - **Data:** CIFAR-10 + Custom
-        """)
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 📈 PAGE: RESULTS DASHBOARD
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def page_results():
-    """Results and performance analysis"""
-    st.title("📈 Results Dashboard")
-    
-    st.markdown("""
-    <div class="mode-badge mode-badge-multiclass">📊 Showing Multiclass Results (CIFAR-10)</div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown(f"**Experiments**: {MULTICLASS_METRICS['total_experiments']} | **Architectures**: {MULTICLASS_METRICS['architectures']} | **GPU Hours**: {MULTICLASS_METRICS['total_gpu_hours']}")
-    
-    st.markdown("---")
-    st.markdown("<h2 class='section-header'>🎨 Decoder Performance</h2>", unsafe_allow_html=True)
-    
-    decoder_data = []
-    for name, config in MULTICLASS_DECODERS.items():
-        decoder_data.append({
-            "Decoder": name,
-            "Architecture": config['architecture'],
-            "Activation": config['activation'].title(),
-            "α": config['alpha'],
-            "Accuracy": config['accuracy'],
-            "CE Loss": config['ce_loss'],
-            "Compaction %": config['compaction_pct']
-        })
-    
-    df_decoders = pd.DataFrame(decoder_data)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Accuracy by Decoder")
-        fig1 = px.bar(df_decoders, x='Decoder', y='Accuracy', 
-                      color='Architecture', title='Classification Accuracy',
-                      color_discrete_sequence=['#3B82F6', '#8B5CF6'])
-        fig1.update_traces(marker_line_width=2, marker_line_color='white')
-        fig1.update_layout(showlegend=True, hovermode='x unified')
-        st.plotly_chart(fig1, use_container_width=True)
-    
-    with col2:
-        st.subheader("Compaction by Decoder")
-        fig2 = px.bar(df_decoders, x='Decoder', y='Compaction %', 
-                      color='Activation', title='File Size Compaction',
-                      color_discrete_sequence=['#F59E0B', '#10B981'])
-        fig2.update_traces(marker_line_width=2, marker_line_color='white')
-        fig2.update_layout(showlegend=True, hovermode='x unified')
-        st.plotly_chart(fig2, use_container_width=True)
-    
-    st.markdown("---")
-    st.markdown("<h2 class='section-header'>📊 vs Baselines</h2>", unsafe_allow_html=True)
-    
-    baseline_data = []
-    for name, config in BASELINES.items():
-        baseline_data.append({
-            "Method": name,
-            "Accuracy": config['accuracy'] * 100,
-            "Compaction %": config['compaction_pct'],
-            "Size": 60,
-            "Type": "Baseline"
-        })
-    
-    for name, config in MULTICLASS_DECODERS.items():
-        baseline_data.append({
-            "Method": f"Ours: {name}",
-            "Accuracy": config['accuracy'] * 100,
-            "Compaction %": config['compaction_pct'],
-            "Size": 80,
-            "Type": "Our Method"
-        })
-    
-    df_baseline = pd.DataFrame(baseline_data)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Accuracy vs Compaction")
-        fig3 = px.scatter(df_baseline, x='Compaction %', y='Accuracy',
-                         hover_name='Method', size='Size',
-                         color='Type',
-                         title='Trade-off Analysis',
-                         color_discrete_map={'Baseline': '#EF4444', 'Our Method': '#10B981'})
-        fig3.update_layout(height=400, hovermode='closest')
-        st.plotly_chart(fig3, use_container_width=True)
-    
-    with col2:
-        st.subheader("CE Loss (Log Scale)")
-        loss_data = []
-        for name, config in BASELINES.items():
-            loss_data.append({
-                "Method": name,
-                "CE Loss": config['ce_loss'],
-                "Type": "Baseline",
-                "Log Loss": np.log10(config['ce_loss'] + 1e-6)
-            })
-        
-        for name, config in MULTICLASS_DECODERS.items():
-            loss_data.append({
-                "Method": f"Ours: {name}",
-                "CE Loss": config['ce_loss'],
-                "Type": "Our Method",
-                "Log Loss": np.log10(config['ce_loss'] + 1e-6)
-            })
-        
-        df_loss = pd.DataFrame(loss_data)
-        fig4 = px.bar(df_loss, x='Method', y='Log Loss',
-                     title='Cross-Entropy Loss (Log Scale)',
-                     color='Type',
-                     color_discrete_map={'Baseline': '#EF4444', 'Our Method': '#10B981'})
-        fig4.update_layout(height=400)
-        st.plotly_chart(fig4, use_container_width=True)
-    
-    st.markdown("---")
-    st.markdown("<h2 class='section-header'>📋 Detailed Metrics</h2>", unsafe_allow_html=True)
-    st.dataframe(df_decoders.style.format({
-        'Accuracy': '{:.1%}',
-        'CE Loss': '{:.4f}',
-        'Compaction %': '{:+.2f}',
-        'α': '{:.2f}'
-    }), use_container_width=True)
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 🔬 PAGE: INTERACTIVE DEMO + BINARY ANALYSIS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def page_demo():
-    """Interactive demo with comprehensive binary analysis"""
-    st.title("🔬 Interactive Decoder Demonstration & Analysis")
-    
-    st.markdown("""
-    <div class="mode-badge mode-badge-binary">🎯 Binary Demo Mode (Cats vs Dogs)</div>
-    """, unsafe_allow_html=True)
-    
-    # Choose section
-    demo_section = st.radio(
-        "Select Section:",
-        ["📊 Comprehensive Binary Analysis", "🎨 Interactive Single Decoder Demo"],
-        horizontal=True
-    )
-    
-    models_dict = load_demo_models()
-    
-    # ═════════════════════════════════════════════════════════════════════════════
-    # SECTION 1: COMPREHENSIVE BINARY ANALYSIS
-    # ═════════════════════════════════════════════════════════════════════════════
-    
-    if demo_section == "📊 Comprehensive Binary Analysis":
-        st.markdown("<h2 class='section-header'>Full Binary Decoder Analysis on Custom Dataset</h2>", unsafe_allow_html=True)
-        
-        st.info("""
-        This section runs ALL binary decoders on your custom dataset and:
-        - Measures accuracy preservation
-        - Calculates compression rates
-        - Compares with Deep Autoencoder baseline
-        - Reports baseline performance
-        """)
-        
-        # Load custom dataset
-        custom_files = sorted([f for f in CUSTOM_DATASET_PATH.glob("*") if f.is_file()])
-        
-        if not custom_files:
-            st.warning("❌ No images found in custom_dataset/")
-            return
-        
-        if st.button("🚀 Run Comprehensive Analysis", type="primary", use_container_width=True):
-            with st.spinner("Analyzing all decoders on custom dataset..."):
-                # Prepare data collection
-                results = []
-                
-                # BASELINE 1: Raw images (no decoder)
-                st.subheader("📌 Phase 1: Baseline - Raw Images (No Decoder)")
-                baseline_correct = 0
-                baseline_total = len(custom_files)
-                
-                progress_bar = st.progress(0)
-                for idx, img_path in enumerate(custom_files):
-                    try:
-                        img = Image.open(img_path).convert('RGB')
-                        img_tensor = preprocess_image(img)
-                        
-                        with torch.no_grad():
-                            pred = models_dict['classifier'](img_tensor)
-                            # True label from filename
-                            true_label = "Cat" if "cat" in img_path.name.lower() else "Dog"
-                            pred_label = "Cat" if pred.argmax().item() == 0 else "Dog"
-                            
-                            if true_label == pred_label:
-                                baseline_correct += 1
-                    except:
-                        pass
-                    
-                    progress_bar.progress((idx + 1) / baseline_total)
-                
-                baseline_acc = baseline_correct / baseline_total if baseline_total > 0 else 0
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("✅ Baseline Accuracy", f"{baseline_acc:.1%}", f"{baseline_correct}/{baseline_total} correct")
-                with col2:
-                    st.metric("📊 Total Images", baseline_total)
-                with col3:
-                    st.metric("🎯 CE Loss", "0.0", "No reconstruction")
-                
-                # BASELINE 2: Deep Autoencoder
-                st.subheader("📌 Phase 2: Deep Autoencoder Baseline")
-                deep_ae_correct = 0
-                deep_ae_total = len(custom_files)
-                
-                progress_bar = st.progress(0)
-                for idx, img_path in enumerate(custom_files):
-                    try:
-                        img = Image.open(img_path).convert('RGB')
-                        img_tensor = preprocess_image(img)
-                        
-                        with torch.no_grad():
-                            recon = models_dict['deep_ae'](img_tensor)
-                            pred = models_dict['classifier'](recon)
-                            
-                            true_label = "Cat" if "cat" in img_path.name.lower() else "Dog"
-                            pred_label = "Cat" if pred.argmax().item() == 0 else "Dog"
-                            
-                            if true_label == pred_label:
-                                deep_ae_correct += 1
-                    except:
-                        pass
-                    
-                    progress_bar.progress((idx + 1) / deep_ae_total)
-                
-                deep_ae_acc = deep_ae_correct / deep_ae_total if deep_ae_total > 0 else 0
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("✅ Deep AE Accuracy", f"{deep_ae_acc:.1%}", f"{deep_ae_correct}/{deep_ae_total} correct")
-                with col2:
-                    st.metric("📊 Total Images", deep_ae_total)
-                with col3:
-                    st.metric("📉 Drop", f"{(baseline_acc - deep_ae_acc):.1%}", "from baseline")
-                
-                results.append({
-                    "Method": "Baseline (Raw Images)",
-                    "Type": "Baseline",
-                    "Accuracy": baseline_acc,
-                    "CE Loss": 0.0,
-                    "Compaction %": 0.0,
-                    "Images Tested": baseline_total,
-                    "Correct": baseline_correct
-                })
-                
-                results.append({
-                    "Method": "Deep Autoencoder",
-                    "Type": "Baseline",
-                    "Accuracy": deep_ae_acc,
-                    "CE Loss": 0.0,
-                    "Compaction %": 8.34,
-                    "Images Tested": deep_ae_total,
-                    "Correct": deep_ae_correct
-                })
-                
-                # PHASE 3: Binary Decoders
-                st.subheader("📌 Phase 3: Task-Aware Binary Decoders")
-                
-                for decoder_name, decoder_info in BINARY_DECODERS.items():
-                    st.write(f"**Testing {decoder_name}...**")
-                    decoder_correct = 0
-                    decoder_total = len(custom_files)
-                    
-                    progress_bar = st.progress(0)
-                    for idx, img_path in enumerate(custom_files):
-                        try:
-                            img = Image.open(img_path).convert('RGB')
-                            img_tensor = preprocess_image(img)
-                            
-                            with torch.no_grad():
-                                features = models_dict['encoder'](img_tensor)
-                                recon = models_dict['decoders'][decoder_name](features)
-                                pred = models_dict['classifier'](recon)
-                                
-                                true_label = "Cat" if "cat" in img_path.name.lower() else "Dog"
-                                pred_label = "Cat" if pred.argmax().item() == 0 else "Dog"
-                                
-                                if true_label == pred_label:
-                                    decoder_correct += 1
-                        except:
-                            pass
-                        
-                        progress_bar.progress((idx + 1) / decoder_total)
-                    
-                    decoder_acc = decoder_correct / decoder_total if decoder_total > 0 else 0
-                    
-                    results.append({
-                        "Method": decoder_name,
-                        "Type": "Our Method",
-                        "Accuracy": decoder_acc,
-                        "CE Loss": decoder_info['ce_loss'],
-                        "Compaction %": decoder_info['compaction_pct'],
-                        "Images Tested": decoder_total,
-                        "Correct": decoder_correct
-                    })
-                
-                # Display comprehensive results
-                st.markdown("---")
-                st.markdown("<h2 class='section-header'>📊 Comprehensive Results</h2>", unsafe_allow_html=True)
-                
-                df_results = pd.DataFrame(results)
-                
-                # Summary metrics
-                col1, col2, col3, col4 = st.columns(4)
-                
-                best_decoder = df_results[df_results['Type'] == 'Our Method'].nlargest(1, 'Accuracy').iloc[0]
-                
-                with col1:
-                    st.metric("🏆 Best Decoder Accuracy", f"{best_decoder['Accuracy']:.1%}", best_decoder['Method'])
-                
-                with col2:
-                    st.metric("📦 Best Compaction", f"{best_decoder['Compaction %']:.2f}%", best_decoder['Method'])
-                
-                with col3:
-                    acc_drop = baseline_acc - best_decoder['Accuracy']
-                    st.metric("📉 Accuracy Drop vs Raw", f"{acc_drop:.1%}", "minimal loss")
-                
-                with col4:
-                    deep_ae_vs_ours = best_decoder['Accuracy'] - deep_ae_acc
-                    st.metric("✅ Improvement vs Deep AE", f"{deep_ae_vs_ours:+.1%}", f"{deep_ae_vs_ours*baseline_total:.0f} more correct")
-                
-                # Visualizations
-                st.markdown("---")
-                
-                viz_col1, viz_col2 = st.columns(2)
-                
-                with viz_col1:
-                    fig_acc = px.bar(df_results, x='Method', y='Accuracy',
-                                    color='Type',
-                                    title='Accuracy Across All Methods',
-                                    color_discrete_map={'Baseline': '#EF4444', 'Our Method': '#10B981'},
-                                    labels={'Method': 'Decoder', 'Accuracy': 'Accuracy (%)'})
-                    fig_acc.update_layout(height=400)
-                    st.plotly_chart(fig_acc, use_container_width=True)
-                
-                with viz_col2:
-                    fig_comp = px.bar(df_results, x='Method', y='Compaction %',
-                                     color='Type',
-                                     title='Compaction % Across Methods',
-                                     color_discrete_map={'Baseline': '#9CA3AF', 'Our Method': '#F59E0B'},
-                                     labels={'Method': 'Decoder', 'Compaction %': 'Compaction (%)'})
-                    fig_comp.update_layout(height=400)
-                    st.plotly_chart(fig_comp, use_container_width=True)
-                
-                # Detailed table
-                st.markdown("---")
-                st.subheader("📋 Detailed Results Table")
-                st.dataframe(df_results.style.format({
-                    'Accuracy': '{:.1%}',
-                    'CE Loss': '{:.4f}',
-                    'Compaction %': '{:+.2f}'
-                }), use_container_width=True)
-                
-                st.markdown("""
-                <div class="success-card">
-                ✅ Analysis Complete!
-                
-                **Key Findings:**
-                - Raw images: {:.1%} accuracy
-                - Deep Autoencoder: {:.1%} accuracy ({:+.1%} vs raw)
-                - Best task-aware decoder: {:.1%} accuracy ({:+.1%} vs raw)
-                </div>
-                """.format(baseline_acc, deep_ae_acc, deep_ae_acc - baseline_acc, 
-                          best_decoder['Accuracy'], best_decoder['Accuracy'] - baseline_acc), 
-                unsafe_allow_html=True)
-    
-    # ═════════════════════════════════════════════════════════════════════════════
-    # SECTION 2: INTERACTIVE SINGLE DECODER
-    # ═════════════════════════════════════════════════════════════════════════════
-    
-    else:
-        st.markdown("<h2 class='section-header'>Single Decoder Interactive Demo</h2>", unsafe_allow_html=True)
-        
-        st.info("""
-        Upload an image and choose a decoder to see real-time reconstruction.
-        """)
-        
-        st.subheader("📸 Step 1: Select Image")
-        
-        source = st.radio("Choose image source:", ["Upload Image", "Use Sample from Dataset"])
-        
-        image = None
-        if source == "Upload Image":
-            uploaded = st.file_uploader("Choose an image (JPG/PNG)", type=['jpg', 'png', 'jpeg'])
-            if uploaded:
-                image = Image.open(uploaded)
-        else:
-            custom_files = sorted([f for f in CUSTOM_DATASET_PATH.glob("*") if f.is_file()])
-            if custom_files:
-                selected = st.selectbox("Select from dataset:", custom_files)
-                image = Image.open(selected)
-            else:
-                st.warning("❌ No images found in custom_dataset/")
-        
-        if image is None:
-            st.info("Please upload an image or select from dataset")
-            return
-        
-        st.subheader("🎨 Step 2: Choose Decoder")
-        selected_decoder = st.selectbox("Select decoder:", list(BINARY_DECODERS.keys()))
-        
-        if st.button("🚀 Reconstruct & Analyze", type="primary", use_container_width=True):
-            with st.spinner("Processing..."):
-                image_tensor = preprocess_image(image)
-                
-                with torch.no_grad():
-                    features = models_dict['encoder'](image_tensor)
-                    reconstruction = models_dict['decoders'][selected_decoder](features)
-                    
-                    pred_orig = models_dict['classifier'](image_tensor)
-                    pred_recon = models_dict['classifier'](reconstruction)
-                
-                st.markdown("---")
-                st.markdown("<h2 class='section-header'>Reconstruction Results</h2>", unsafe_allow_html=True)
-                
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.markdown("**Original Image**")
-                    st.image(image, use_column_width=True)
-                    
-                    orig_pred_idx = pred_orig.argmax().item()
-                    orig_class = "Cat" if orig_pred_idx == 0 else "Dog"
-                    orig_conf = pred_orig.softmax(dim=1).max().item()
-                    st.markdown(f"**Class**: {orig_class}  \n**Confidence**: {orig_conf:.1%}")
-                
-                with col2:
-                    st.markdown(f"**Reconstructed ({selected_decoder})**")
-                    recon_image = tensor_to_image(reconstruction)
-                    st.image(recon_image, use_column_width=True)
-                    
-                    recon_pred_idx = pred_recon.argmax().item()
-                    recon_class = "Cat" if recon_pred_idx == 0 else "Dog"
-                    recon_conf = pred_recon.softmax(dim=1).max().item()
-                    st.markdown(f"**Class**: {recon_class}  \n**Confidence**: {recon_conf:.1%}")
-                
-                with col3:
-                    st.markdown("**Decoder Specs**")
-                    decoder_info = BINARY_DECODERS[selected_decoder]
-                    
-                    st.metric("Architecture", decoder_info['architecture'])
-                    st.metric("Activation", decoder_info['activation'].title())
-                    st.metric("α Parameter", f"{decoder_info['alpha']:.2f}")
-                    st.metric("Compaction", f"{decoder_info['compaction_pct']:+.2f}%")
-                
-                st.markdown("---")
-                st.success("✅ Reconstruction complete!")
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 📖 PAGE: ABOUT
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def page_about():
-    """Project information"""
-    st.title("📖 About This Project")
-    
-    st.markdown("""
-    ## Task-Aware Image Reconstruction via Normalized Loss Balancing
-    
-    **Authors**: Rishabh Ranjan, Mumtaz Parveen, Mithun Raj, Mallanagowda Hosamani  
-    **Institution**: ACS College of Engineering, Bangalore  
-    **Affiliation**: Visvesvaraya Technological University, Belagavi  
-    **Year**: 2025-2026
-    
-    ---
-    
-    ### 🎯 Core Innovation
-    
-    The **Normalized Loss Balancing Framework** solves multi-objective optimization by normalizing via exponential moving averages.
-    """)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📊 Binary Experiments")
-        st.markdown(f"""
-        - **Total**: {BINARY_METRICS['total_experiments']} experiments
-        - **Architectures**: {BINARY_METRICS['architectures']}
-        - **GPU Time**: {BINARY_METRICS['total_gpu_hours']} hours
-        - **Baseline Accuracy**: {BINARY_CLASSIFIER['accuracy']:.1%}
-        """)
-    
-    with col2:
-        st.subheader("📊 Multiclass Experiments")
-        st.markdown(f"""
-        - **Total**: {MULTICLASS_METRICS['total_experiments']} experiments
-        - **Architectures**: {MULTICLASS_METRICS['architectures']}
-        - **GPU Time**: {MULTICLASS_METRICS['total_gpu_hours']} hours
-        - **Baseline Accuracy**: {MULTICLASS_CLASSIFIER['accuracy']:.1%}
-        """)
-    
-    st.markdown("---")
-    st.subheader("🔐 Privacy Analysis")
-    
-    specificity = EXTRACTOR_SPECIFICITY
-    spec_data = {
-        "Training": ["Original", "Reconstructed"],
-        "Tested on Original": [
-            f"{specificity['trained_on_original']['tested_on_original']:.1%}",
-            f"{specificity['trained_on_reconstructions']['tested_on_original']:.1%}"
-        ],
-        "Tested on Reconstruction": [
-            f"{specificity['trained_on_original']['tested_on_reconstructions']:.1%}",
-            f"{specificity['trained_on_reconstructions']['tested_on_reconstructions']:.1%}"
-        ]
+    comp_data = {
+        "Method": ["JPEG (traditional)", "Deep Autoencoder", "Our Method"],
+        "Accuracy": ["~45%", "69.37%", "78.40%"],
+        "Focus": ["Human perception", "Reconstruction fidelity", "Task performance"],
+        "Status": ["❌ Task-agnostic", "⚠️ Incomplete", "✓ Balanced"],
     }
     
-    st.table(pd.DataFrame(spec_data))
+    comp_df = pd.DataFrame(comp_data)
+    st.dataframe(comp_df, use_container_width=True, hide_index=True)
+    
+    st.markdown("""
+    <div class="info-box">
+    <strong>Key insight:</strong> Deep autoencoders optimize MSE (pixel-perfect reconstruction) which actually <em>harms</em> 
+    classification accuracy. We balance both for optimal edge deployment.
+    </div>
+    """, unsafe_allow_html=True)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# MAIN APP
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
+# 🎨 PAGE 2: DEMO - 6 VARIANTS, 5 SAMPLES
+# ═════════════════════════════════════════════════════════════════════════════
+
+def page_demo():
+    st.markdown('<div class="header-premium">🎨 Reconstruction Demo</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subheader-premium">6 variants side by side on CIFAR-10 test images</div>', unsafe_allow_html=True)
+    
+    st.markdown('<div class="divider-premium"></div>', unsafe_allow_html=True)
+    
+    dataset = load_cifar10()
+    models = load_models()
+    encoder = models['encoder']
+    deep_ae = models['deep_ae']
+    decoders = models['decoders']
+    
+    cifar_classes = ['Airplane', 'Automobile', 'Bird', 'Cat', 'Deer', 'Dog', 'Frog', 'Horse', 'Ship', 'Truck']
+    
+    tab_dataset, tab_upload = st.tabs(["📊 Dataset", "⬆️ Upload"])
+    
+    with tab_dataset:
+        st.markdown('<div class="section-title">📌 Select Class</div>', unsafe_allow_html=True)
+        selected_class = st.selectbox("", cifar_classes, key="demo_class", label_visibility="collapsed")
+        
+        st.markdown('<div class="divider-premium"></div>', unsafe_allow_html=True)
+        
+        class_idx = cifar_classes.index(selected_class)
+        class_indices = [i for i, (_, y) in enumerate(dataset) if y == class_idx][:5]
+        
+        if not class_indices:
+            st.error(f"No {selected_class} samples in dataset")
+            return
+        
+        st.markdown(f'<div class="section-title">{selected_class} — 5 Samples</div>', unsafe_allow_html=True)
+        
+        variants = [
+            ('Original', None, None, 'Input'),
+            ('Deep AE', 'deep_ae', None, 'Deep Autoencoder Baseline'),
+            ('SimpleTanh', 'SimpleTanh', 'decoders', 'Simple Decoder (Tanh)'),
+            ('SimpleSig', 'SimpleSigmoid', 'decoders', 'Simple Decoder (Sigmoid)'),
+            ('MRTanh', 'MRTanh', 'decoders', 'Mirrored ResNet (Tanh)'),
+            ('MRSig', 'MRSigmoid', 'decoders', 'Mirrored ResNet (Sigmoid)'),
+        ]
+        
+        fig, axes = plt.subplots(5, 6, figsize=(16, 13.5))
+        fig.patch.set_facecolor('#0a0e27')
+        
+        with st.spinner("🔄 Rendering reconstructions..."):
+            for row_idx, img_idx in enumerate(class_indices):
+                img_tensor, label = dataset[img_idx]
+                img_batch = img_tensor.unsqueeze(0)
+                
+                with torch.no_grad():
+                    latent = encoder(img_batch)
+                
+                for col_idx, (short_name, model_key, model_type, full_label) in enumerate(variants):
+                    ax = axes[row_idx, col_idx]
+                    
+                    try:
+                        if short_name == 'Original':
+                            img_pil = denormalize_tensor(img_tensor)
+                        elif short_name == 'Deep AE':
+                            with torch.no_grad():
+                                recon = deep_ae(img_batch)
+                            img_pil = denormalize_tensor(recon)
+                        else:
+                            if model_type == 'decoders' and model_key in decoders:
+                                with torch.no_grad():
+                                    recon = decoders[model_key](latent)
+                                img_pil = denormalize_tensor(recon)
+                            else:
+                                ax.text(0.5, 0.5, 'N/A', ha='center', va='center', color='#b0bec5', fontsize=11, fontweight='bold')
+                                ax.axis('off')
+                                continue
+                        
+                        ax.imshow(img_pil)
+                        
+                        if row_idx == 0:
+                            ax.set_title(full_label, fontsize=9.5, color='#00d4ff', fontweight='bold', pad=8)
+                        
+                        if col_idx == 0:
+                            ax.text(-0.35, 0.5, f'Sample {row_idx + 1}', 
+                                   transform=ax.transAxes, fontsize=9, color='#667eea',
+                                   fontweight='bold', va='center', ha='right')
+                        
+                        for spine in ax.spines.values():
+                            spine.set_edgecolor('#2d3561')
+                            spine.set_linewidth(0.5)
+                        
+                        ax.axis('off')
+                    
+                    except Exception as e:
+                        ax.text(0.5, 0.5, 'Error', ha='center', va='center', color='#ff6b6b', fontsize=10)
+                        ax.axis('off')
+        
+        plt.tight_layout()
+        st.pyplot(fig, use_container_width=True)
+        plt.close()
+        
+        st.markdown("""
+        <div class="info-box">
+        <strong>Reading the grid:</strong> Each row shows a different CIFAR-10 sample. Columns represent different reconstruction methods, from baseline (Deep AE) to our task-aware variants.
+        <br><br>
+        <strong>Key observation:</strong> Simple decoders achieve aggressive compression while preserving task-critical features. Mirrored ResNet preserves perceptual quality with minimal compaction.
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with tab_upload:
+        st.markdown('<div class="section-title">📤 Upload Custom Image <span class="experimental-badge">EXPERIMENTAL</span></div>', unsafe_allow_html=True)
+        st.markdown('<div class="text-muted">Upload any image (will be resized to 32×32) — Classification: Dog vs Cat</div>', unsafe_allow_html=True)
+        
+        uploaded_file = st.file_uploader("", type=['jpg', 'jpeg', 'png', 'bmp'], label_visibility="collapsed")
+        
+        if uploaded_file is not None:
+            img = Image.open(uploaded_file).convert('RGB')
+            img_tensor = prepare_image(img)
+            
+            st.markdown('<div class="divider-premium"></div>', unsafe_allow_html=True)
+            
+            binary_classifier = models['binary_classifier']
+            
+            with torch.no_grad():
+                orig_logits = binary_classifier(img_tensor)
+                orig_pred = torch.argmax(orig_logits).item()
+            
+            binary_classes = ['🐕 Dog', '🐈 Cat']
+            
+            st.markdown('<div class="section-title">Original Image</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="text-accent">Predicted: <strong>{binary_classes[orig_pred]}</strong></div>', unsafe_allow_html=True)
+            
+            st.markdown('<div class="divider-premium"></div>', unsafe_allow_html=True)
+            
+            with torch.no_grad():
+                latent = encoder(img_tensor)
+            
+            variants_upload = [
+                ('Deep AE', 'deep_ae', None, 'Deep Autoencoder'),
+                ('SimpleTanh', 'SimpleTanh', 'decoders', 'Simple (Tanh)'),
+                ('SimpleSig', 'SimpleSigmoid', 'decoders', 'Simple (Sigmoid)'),
+                ('MRTanh', 'MRTanh', 'decoders', 'Mirrored (Tanh)'),
+                ('MRSig', 'MRSigmoid', 'decoders', 'Mirrored (Sigmoid)'),
+            ]
+            
+            st.markdown('<div class="section-title">🎨 Reconstructions & Classifications</div>', unsafe_allow_html=True)
+            
+            cols = st.columns(5)
+            
+            for col_idx, (short_name, model_key, model_type, full_label) in enumerate(variants_upload):
+                with cols[col_idx]:
+                    try:
+                        if short_name == 'Deep AE':
+                            with torch.no_grad():
+                                recon = deep_ae(img_tensor)
+                        else:
+                            if model_type == 'decoders' and model_key in decoders:
+                                with torch.no_grad():
+                                    recon = decoders[model_key](latent)
+                            else:
+                                st.error("N/A")
+                                continue
+                        
+                        img_pil = denormalize_tensor(recon)
+                        
+                        with torch.no_grad():
+                            recon_logits = binary_classifier(recon)
+                            recon_pred = torch.argmax(recon_logits).item()
+                        
+                        st.image(img_pil, use_container_width=True)
+                        st.markdown(f"**{full_label}**", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size: 0.9em; color: #00d4ff;'>{binary_classes[recon_pred]}</div>", unsafe_allow_html=True)
+                    
+                    except Exception as e:
+                        st.error(str(e)[:50])
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 📈 PAGE 3: RESULTS
+# ═════════════════════════════════════════════════════════════════════════════
+
+def page_results():
+    st.markdown('<div class="header-premium">📈 Results & Analysis</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subheader-premium">Accuracy, compression, and trade-offs</div>', unsafe_allow_html=True)
+    
+    st.markdown('<div class="divider-premium"></div>', unsafe_allow_html=True)
+    
+    acc_col, comp_col = st.columns(2, gap="large")
+    
+    with acc_col:
+        st.markdown('<div class="section-title">🎯 Classification Accuracy</div>', unsafe_allow_html=True)
+        
+        results_data = {
+            'Method': ['Baseline', 'Our Best', 'Deep AE', 'JPEG'],
+            'Accuracy': [77.71, 78.40, 69.37, 45.0],
+            'Δ': ['—', '+0.69%', '-8.34%', '-32.71%']
+        }
+        df = pd.DataFrame(results_data)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    
+    with comp_col:
+        st.markdown('<div class="section-title">📦 Compaction by Variant</div>', unsafe_allow_html=True)
+        
+        compaction_data = {
+            'Decoder': ['SimpleTanh', 'SimpleSigmoid', 'MRTanh', 'MRSigmoid'],
+            'Compaction %': [22.43, 23.24, 0.94, -10.92],
+        }
+        df_comp = pd.DataFrame(compaction_data)
+        st.dataframe(df_comp, use_container_width=True, hide_index=True)
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 🎛️ MAIN
+# ═════════════════════════════════════════════════════════════════════════════
 
 def main():
-    """Main application"""
-    st.sidebar.title("🗂️ Navigation")
+    pages = {
+        "🏠 Intro": page_intro,
+        "🎨 Demo": page_demo,
+        "📈 Results": page_results,
+    }
     
-    page = st.sidebar.radio(
-        "Select Page:",
-        ["🏠 Home", "📈 Results (Multiclass)", "🔬 Interactive Demo (Binary)", "📖 About"]
-    )
+    st.sidebar.markdown("## Navigation")
+    page = st.sidebar.radio("", list(pages.keys()), key="nav", label_visibility="collapsed")
     
-    st.sidebar.markdown("---")
-    
-    
-    if page == "🏠 Home":
-        page_home()
-    elif page == "📈 Results (Multiclass)":
-        page_results()
-    elif page == "🔬 Interactive Demo (Binary)":
-        page_demo()
-    elif page == "📖 About":
-        page_about()
+    pages[page]()
 
 if __name__ == "__main__":
     main()
